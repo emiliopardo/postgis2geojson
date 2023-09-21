@@ -34,11 +34,11 @@ def get_table_list(connection,schema):
     return df
 
 # funcion que optien las columnas de una determianda tabla
-def get_column_list(connection, schema, table_name):
+def get_column_list(connection, schema, table_name,primary_key):
     sql = "SELECT column_name FROM information_schema.columns WHERE table_schema = '"+schema+"' AND table_name   = '"+table_name+"';"
     df = pd.read_sql(sql, connection)
     # devolvemos todos los campos menos el campo gid que es el primary_key de las tablas y no lo queremos en los geojson
-    df = df.drop(df[df['column_name'] == 'gid'].index)
+    df = df.drop(df[df['column_name'] == primary_key].index)
     my_row = ''
     for index, row in df.iterrows():
         if index == 0:
@@ -48,16 +48,16 @@ def get_column_list(connection, schema, table_name):
     return(my_row)
 
 # funcion que devuelve una tabla de postgis como dataframe de geopandas haciendo peticiones paginadas
-def get_geodataframe(connection, schema, table_name):
-    my_columns = get_column_list(connection,schema,table_name)           
+def get_geodataframe(primary_key,connection, schema, table_name):
+    my_columns = get_column_list(connection,schema,table_name,primary_key)           
     sql = "SELECT "+my_columns+" FROM \""+schema+"\"."+table_name+" ORDER BY gid ASC;"
     gdf = gpd.read_postgis(sql,connection, geom_col='the_geom', crs='25830')
     # antes de devolver los datos se tranforma al CRS 4258
     return gdf.to_crs(crs=4258) 
 
 # funcion que devuelve una tabla de postgis como dataframe de geopandas haciendo peticiones paginadas
-def get_geodataframe_split(connection, schema, table_name, offset, limit):
-    my_columns = get_column_list(connection,schema,table_name)           
+def get_geodataframe_split(primary_key,connection, schema, table_name, offset, limit):
+    my_columns = get_column_list(connection,schema,table_name,primary_key)           
     sql = "SELECT "+my_columns+" FROM \""+schema+"\"."+table_name+" ORDER BY gid ASC LIMIT "+str(limit)+" OFFSET "+str(offset)+";"
     gdf = gpd.read_postgis(sql,connection, geom_col='the_geom', crs='25830')
     # antes de devolver los datos se tranforma al CRS 4258
@@ -74,6 +74,7 @@ if __name__=='__main__':
     max_feature_number = 100000
     parameters =config()
     connection = connect(parameters)
+    primary_key = parameters['primary_key']
     table_list = get_table_list(connection, parameters['schema'])
 
     for index, row in table_list.iterrows():
@@ -85,12 +86,12 @@ if __name__=='__main__':
                 offset = 0
                 while iteration <= int(np.ceil(feature_number/max_feature_number)):
                     print(f"iteracion numero {iteration}!")
-                    data = get_geodataframe_split(connection,parameters['schema'],row['f_table_name'], offset, max_feature_number)
+                    data = get_geodataframe_split(primary_key,connection,parameters['schema'],row['f_table_name'], offset, max_feature_number)
                     data.to_file('./output/'+row['f_table_name']+'.geojson_'+str(iteration) ,driver='GeoJSON', encoding='utf-8')
                     iteration = iteration + 1
-                    offset = (max_feature_number*(iteration-1))    
+                    offset = (max_feature_number*(iteration-1))  
             else:
                 print("no es necesario partir la tabla "+ row['f_table_name'] + " feature number: "+str(feature_number))
-                data = get_geodataframe(connection,parameters['schema'],row['f_table_name'])
+                data = get_geodataframe(primary_key,connection,parameters['schema'],row['f_table_name'])
                 data.to_file('./output/'+row['f_table_name']+'.geojson_1',driver='GeoJSON', encoding='utf-8')
                 
